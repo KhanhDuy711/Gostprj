@@ -1,0 +1,160 @@
+// Visual Bar Store — Prisma schema
+// Run `npx prisma migrate dev` against a PostgreSQL database.
+// For local development without Postgres installed, see docker-compose.yml.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String     @unique
+  passwordHash  String?
+  role          Role       @default(CUSTOMER)
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  orders        Order[]
+  downloadLogs  DownloadLog[]
+
+  @@map("users")
+}
+
+model Category {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  slug        String        @unique
+  description String?
+  createdAt   DateTime      @default(now())
+
+  packs       ProductPack[]
+
+  @@map("categories")
+}
+
+model ProductPack {
+  id              String        @id @default(cuid())
+  name            String
+  slug            String        @unique
+  description     String
+  priceCents      Int
+  currency        String        @default("USD")
+  coverImageKey   String
+  resolution      String        @default("4K (3840x2160)")
+  format          String        @default("MP4 (H.264)")
+  totalFileSizeMb Int           @default(0)
+  license         String        @default("Standard Commercial License")
+  isFeatured      Boolean       @default(false)
+  isNew           Boolean       @default(false)
+  isPublished     Boolean       @default(false)
+  categoryId      String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  category        Category      @relation(fields: [categoryId], references: [id])
+  videos          ProductVideo[]
+  orderItems      OrderItem[]
+
+  @@index([categoryId])
+  @@map("product_packs")
+}
+
+model ProductVideo {
+  id               String      @id @default(cuid())
+  packId           String
+  title            String
+  order             Int        @default(0)
+  durationSeconds  Int
+  thumbnailKey     String
+  previewVideoKey  String   // watermarked, public-safe preview
+  originalVideoKey String   // private, never exposed on public pages
+  fileSizeMb       Int         @default(0)
+  createdAt        DateTime    @default(now())
+
+  pack             ProductPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@index([packId])
+  @@map("product_videos")
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  userId      String
+  status      OrderStatus @default(PENDING)
+  totalCents  Int
+  currency    String      @default("USD")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id])
+  items       OrderItem[]
+  payment     Payment?
+
+  @@index([userId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String      @id @default(cuid())
+  orderId     String
+  packId      String
+  unitPriceCents Int
+  quantity    Int         @default(1)
+
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  pack        ProductPack @relation(fields: [packId], references: [id])
+
+  @@index([orderId])
+  @@index([packId])
+  @@map("order_items")
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  orderId         String   @unique
+  provider        String   // e.g. "mock", "stripe", "vnpay"
+  providerRef     String?  // provider's payment intent / transaction id
+  signatureValid  Boolean  @default(false)
+  rawWebhookPayload Json?
+  paidAt          DateTime?
+  createdAt       DateTime @default(now())
+
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model DownloadLog {
+  id        String   @id @default(cuid())
+  userId    String
+  packId    String
+  videoId   String?
+  kind      String   // "video" | "zip"
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("download_logs")
+}
